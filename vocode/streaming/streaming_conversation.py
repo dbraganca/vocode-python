@@ -597,9 +597,34 @@ class StreamingConversation(Generic[OutputDeviceType]):
         return num_interrupts > 0
 
     def is_interrupt(self, transcription: Transcription):
-        return transcription.confidence >= (
+        
+        # guarantee minimum confidence in transcription
+        if transcription.confidence >= (
             self.transcriber.get_transcriber_config().min_interrupt_confidence or 0
-        )
+        ):
+            message = transcription.message.lower()
+            words = message.split()
+            interruption_threshold = self.transcriber.get_transcriber_config().interruption_threshold
+            # Verbal cues that indicate no interruption
+            verbal_cues = ["uh", "mhmm", "yes", "yeah", "ok", "i see", "i understand", "go on"]
+
+            if (len(words)==0) or (len(words) <= interruption_threshold):
+                # No interruption for very short interruptions
+                return False
+              
+            if any(cue in message for cue in verbal_cues):
+                # No interruption for verbal cues
+                return False
+
+            # Check for interruptions with more than two words
+            if len(words) > interruption_threshold:
+                return True
+
+            return False
+
+            # return transcription.confidence >= (
+            #     self.transcriber.get_transcriber_config().min_interrupt_confidence or 0
+            # )
 
     async def send_speech_to_output(
         self,
