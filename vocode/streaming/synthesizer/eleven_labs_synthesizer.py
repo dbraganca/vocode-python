@@ -15,6 +15,7 @@ from vocode.streaming.synthesizer.base_synthesizer import (
     SynthesisResult,
     FILLER_PHRASES,
     FILLER_AUDIO_PATH,
+    FILLER_KEY,
     FillerAudio,
     encode_as_wav,
     tracer,
@@ -58,7 +59,11 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
         self.logger = logger or logging.getLogger(__name__)
 
     async def get_phrase_filler_audios(self) -> List[FillerAudio]:
-        filler_phrase_audios = []
+        filler_phrase_audios = {
+            'question': [],
+            'confirm': []
+        }
+
         for filler_phrase in FILLER_PHRASES:
             cache_key = "-".join(
                 (
@@ -113,20 +118,22 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
 
                         audio_segment.export(filler_audio_path, format="wav")
 
-
-            filler_phrase_audios.append(
-                FillerAudio(
-                    filler_phrase,
-                    audio_data = convert_wav(
-                        filler_audio_path,
-                        output_sample_rate=self.synthesizer_config.sampling_rate,
-                        output_encoding=self.synthesizer_config.audio_encoding
-                    ),
-                    synthesizer_config=self.synthesizer_config,
-                    is_interruptible=False,
-                    seconds_per_chunk=2,
-                )
-            )
+            audio_data = convert_wav(
+                                filler_audio_path,
+                                output_sample_rate=self.synthesizer_config.sampling_rate,
+                                output_encoding=self.synthesizer_config.audio_encoding
+                            )
+            for key in filler_phrase_audios:
+                if filler_phrase in FILLER_KEY[key]:
+                    filler_phrase_audios[key].append(
+                        FillerAudio(
+                            filler_phrase,
+                            audio_data = audio_data,
+                            synthesizer_config=self.synthesizer_config,
+                            is_interruptible=False,
+                            seconds_per_chunk=2,
+                        )
+                    )
         return filler_phrase_audios
 
     async def create_speech(
