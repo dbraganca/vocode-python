@@ -3,7 +3,7 @@ import logging
 import time
 import os
 import io
-from typing import List, Any, AsyncGenerator, Optional, Tuple, Union
+from typing import List, Any, AsyncGenerator, Optional, Tuple, Union, Dict
 import wave
 import aiohttp
 from opentelemetry.trace import Span
@@ -58,7 +58,7 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
         self.experimental_streaming = synthesizer_config.experimental_streaming
         self.logger = logger or logging.getLogger(__name__)
 
-    async def get_phrase_filler_audios(self) -> List[FillerAudio]:
+    async def get_phrase_filler_audios(self) -> Dict[str,List[FillerAudio]]:
         filler_phrase_audios = {
             'question': [],
             'confirm': []
@@ -124,7 +124,7 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
                                 output_encoding=self.synthesizer_config.audio_encoding
                             )
             for key in filler_phrase_audios:
-                if filler_phrase in FILLER_KEY[key]:
+                if filler_phrase.text in FILLER_KEY[key]:
                     filler_phrase_audios[key].append(
                         FillerAudio(
                             filler_phrase,

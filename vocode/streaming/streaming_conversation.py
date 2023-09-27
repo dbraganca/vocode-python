@@ -264,6 +264,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     filler_audio = random.choice(
                         filler_audios['confirm']
                     )
+                    self.conversation.logger.debug("Chose confirm type")
                 elif self.conversation.is_interrupted:
                     filler_audio = random.choice(
                         filler_audios['confirm']
