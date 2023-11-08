@@ -332,7 +332,8 @@ class StreamingConversation(Generic[OutputDeviceType]):
                 else:
                     synthesis_result = synthesis_results
                     message = agent_response_message.message
-                self.conversation.is_synthesizing = False
+                # check if there is more to synthesize 
+                self.conversation.is_synthesizing = not self.input_queue.empty()
                 self.produce_interruptible_agent_response_event_nonblocking(
                     (message, synthesis_result),
                     is_interruptible=item.is_interruptible,
@@ -373,8 +374,10 @@ class StreamingConversation(Generic[OutputDeviceType]):
                 )
                 # set flag for bot interruption
                 self.conversation.is_interrupted = False
+                
                 # set flag for bot speaking
                 self.conversation.is_bot_speaking = True
+
                 message_sent, cut_off = await self.conversation.send_speech_to_output(
                     message.text,
                     synthesis_result,
@@ -384,8 +387,8 @@ class StreamingConversation(Generic[OutputDeviceType]):
                 )
                 # set flag to indicate whether bot was interrupted
                 self.conversation.is_interrupted = cut_off
-                # set flag to indicate bot finished speaking
-                self.conversation.is_bot_speaking = False
+                # set flag to check if there is more to say
+                self.conversation.is_bot_speaking = not self.input_queue.empty()
                 # publish the transcript message now that it includes what was said during send_speech_to_output
                 self.conversation.transcript.maybe_publish_transcript_event_from_message(
                     message=transcript_message,
