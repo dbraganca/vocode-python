@@ -194,7 +194,7 @@ class RandomAudioManager:
 
             elif self.conversation.is_interrupted:
                 filler_audio = random.choice(
-                    filler_audios['confirm']
+                    filler_audios['interrupt']
                 )
                 self.logger.debug(f"Chose confirmation type, text: {filler_audio.message.text}")
 
