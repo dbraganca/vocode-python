@@ -1,5 +1,7 @@
 import os
 import __main__
+import hashlib
+from abc import abstractmethod
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
@@ -44,6 +46,13 @@ except Exception as e:
 
 TYPING_NOISE_PATH = "%s/typing-noise.wav" % FILLER_AUDIO_PATH
 
+
+def __hash__(instance) -> str:
+    hash = hashlib.sha256()
+    hash.update(bytes(getattr(instance, "type"), "utf-8"))
+    for _, value in vars(instance).items():
+        hash.update(bytes(str(value), "utf-8"))
+    return hash.hexdigest()
 
 class SynthesizerType(str, Enum):
     BASE = "synthesizer_base"
@@ -111,6 +120,9 @@ class SynthesizerConfig(TypedModel, type=SynthesizerType.BASE.value):
             audio_encoding=output_audio_config.audio_encoding,
             **kwargs
         )
+    
+    def __hash__(self) -> str:
+        return __hash__(self)
 
 
 AZURE_SYNTHESIZER_DEFAULT_VOICE_NAME = "en-US-SteffanNeural"
@@ -122,7 +134,7 @@ class AzureSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.AZURE.value
     voice_name: str = AZURE_SYNTHESIZER_DEFAULT_VOICE_NAME
     pitch: int = AZURE_SYNTHESIZER_DEFAULT_PITCH
     rate: int = AZURE_SYNTHESIZER_DEFAULT_RATE
-    language_code: str = "en-US"
+    language_code: str = "en-US"    
 
 
 DEFAULT_GOOGLE_LANGUAGE_CODE = "en-US"

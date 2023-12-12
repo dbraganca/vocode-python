@@ -27,7 +27,7 @@ from vocode.streaming.telephony.conversation.call import Call
 from vocode.streaming.transcriber.factory import TranscriberFactory
 from vocode.streaming.utils.events_manager import EventsManager
 from vocode.streaming.utils.state_manager import TwilioCallStateManager
-
+from vocode.streaming.utils.cache import RedisRenewableTTLCache
 
 class PhoneCallWebsocketAction(Enum):
     CLOSE_WEBSOCKET = 1
@@ -49,6 +49,7 @@ class TwilioCall(Call[TwilioOutputDevice]):
         transcriber_factory: TranscriberFactory = TranscriberFactory(),
         agent_factory: AgentFactory = AgentFactory(),
         synthesizer_factory: SynthesizerFactory = SynthesizerFactory(),
+        synthesizer_cache: Optional[RedisRenewableTTLCache] = None,
         events_manager: Optional[EventsManager] = None,
         logger: Optional[logging.Logger] = None,
     ):
@@ -66,6 +67,7 @@ class TwilioCall(Call[TwilioOutputDevice]):
             transcriber_factory=transcriber_factory,
             agent_factory=agent_factory,
             synthesizer_factory=synthesizer_factory,
+            synthesizer_cache=synthesizer_cache,
             logger=logger,
         )
         self.base_url = base_url

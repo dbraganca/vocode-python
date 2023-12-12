@@ -497,7 +497,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.agent.start()
         initial_message = self.agent.get_agent_config().initial_message
         if initial_message:
-            asyncio.create_task(self.send_initial_message(initial_message))
+            initial_message_task = asyncio.create_task(self.send_initial_message(initial_message))
         self.agent.attach_transcript(self.transcript)
         if mark_ready:
             await mark_ready()
@@ -517,6 +517,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.check_for_idle_task = asyncio.create_task(self.check_for_idle())
         if len(self.events_manager.subscriptions) > 0:
             self.events_task = asyncio.create_task(self.events_manager.start())
+        await initial_message_task if initial_message_task else None
 
     async def send_initial_message(self, initial_message: BaseMessage):
         try:
@@ -737,7 +738,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
             self.logger.debug("Terminating events Task")
             await self.events_manager.flush()
         self.logger.debug("Tearing down synthesizer")
-        await self.synthesizer.tear_down()
+        tear_down_synthesizer_task = asyncio.create_task(self.synthesizer.tear_down())
         self.logger.debug("Terminating agent")
         if (
             isinstance(self.agent, ChatGPTAgent)
@@ -764,6 +765,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         if self.actions_worker is not None:
             self.logger.debug("Terminating actions worker")
             self.actions_worker.terminate()
+        await tear_down_synthesizer_task
         self.logger.debug("Successfully terminated")
 
     def is_active(self):
