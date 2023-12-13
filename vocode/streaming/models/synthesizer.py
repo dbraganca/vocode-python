@@ -88,8 +88,8 @@ class SynthesizerConfig(TypedModel, type=SynthesizerType.BASE.value):
     audio_encoding: AudioEncoding
     should_encode_as_wav: bool = False
     sentiment_config: Optional[SentimentConfig] = None
-    # added by bluberry
     initial_bot_sentiment: Optional[BotSentiment] = None
+    index_config: Optional[IndexConfig] = None
     base_filler_audio_path: str = FILLER_AUDIO_PATH
     base_follow_up_audio_path: str = FOLLOW_UP_AUDIO_PATH
 
@@ -123,6 +123,9 @@ class SynthesizerConfig(TypedModel, type=SynthesizerType.BASE.value):
     
     def __hash__(self) -> str:
         return __hash__(self)
+    
+    def get_cache_key(self, text: str) -> str:
+        return self.__hash__() + text
 
 
 AZURE_SYNTHESIZER_DEFAULT_VOICE_NAME = "en-US-SteffanNeural"
@@ -165,8 +168,8 @@ class ElevenLabsSynthesizerConfig(
     stability: Optional[float]
     similarity_boost: Optional[float]
     model_id: Optional[str]
-    index_config: Optional[IndexConfig] = None
     index_cache: Optional[Dict[str, Any]] = None
+    use_cache: bool = True
 
     @validator("voice_id")
     def set_name(cls, voice_id):

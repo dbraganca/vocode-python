@@ -358,4 +358,4 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
             await self.aiohttp_session.close()
 
     def get_cache_key(self, text: str) -> str:
-        return self.synthesizer_config.__hash__() + text
+        return self.synthesizer_config.get_cache_key(text)
