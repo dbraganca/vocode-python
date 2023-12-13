@@ -110,7 +110,6 @@ class TwilioCall(Call[TwilioOutputDevice]):
             twilio_call.update(status="completed")
         else:
             await self.wait_for_twilio_start(ws)
-            await super().start()
             self.events_manager.publish_event(
                 PhoneCallConnectedEvent(
                     conversation_id=self.id,
@@ -118,11 +117,22 @@ class TwilioCall(Call[TwilioOutputDevice]):
                     from_phone_number=self.from_phone,
                 )
             )
+            # await super().start()
+            started_event = asyncio.Event()
+            start_conversation_task = asyncio.create_task(
+                super().start(started_event=started_event)
+            )
+            self.logger.debug("Started Streaming Conversation...")
+            
+            await started_event.wait()
+            self.logger.debug("Started event set!")
             while self.active:
                 message = await ws.receive_text()
                 response = await self.handle_ws_message(message)
                 if response == PhoneCallWebsocketAction.CLOSE_WEBSOCKET:
                     break
+            await start_conversation_task
+
         await self.config_manager.delete_config(self.id)
         await self.tear_down()
 
