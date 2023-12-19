@@ -34,6 +34,11 @@ from vocode.streaming.models.audio_encoding import AudioEncoding
 from vocode.streaming.models.synthesizer import SynthesizerConfig, TYPING_NOISE_PATH
 import logging
 import base64
+import joblib
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(script_dir, 'chunk_estimator_gradient_boosting_model.joblib')
+model = joblib.load(model_path)
 
 # Get the root logger
 logger = logging.getLogger()
@@ -84,10 +89,11 @@ class SynthesisResult:
         self,
         chunk_generator: AsyncGenerator[ChunkResult, None],
         get_message_up_to: Callable[[float], str],
+        total_chunks: Optional[int] = None,
     ):
         self.chunk_generator = chunk_generator
         self.get_message_up_to = get_message_up_to
-
+        self.total_chunks = total_chunks if total_chunks is not None else -1
 
 class FillerAudio:
     def __init__(
@@ -113,6 +119,8 @@ class FillerAudio:
             * self.seconds_per_chunk
         )
 
+        total_chunks = math.ceil(len(self.audio_data) / chunk_size)
+
         async def chunk_generator(chunk_transform=lambda x: x):
             for i in range(0, len(self.audio_data), chunk_size):
                 if i + chunk_size > len(self.audio_data):
@@ -130,7 +138,7 @@ class FillerAudio:
             )
         else:
             output_generator = chunk_generator()
-        return SynthesisResult(output_generator, lambda seconds: self.message.text)
+        return SynthesisResult(output_generator, lambda seconds: self.message.text, total_chunks)
 
 
 SynthesizerConfigType = TypeVar("SynthesizerConfigType", bound=SynthesizerConfig)
@@ -268,6 +276,8 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
         else:
             chunk_transform = lambda chunk: chunk
 
+        total_chunks = math.ceil(len(output_bytes) / chunk_size)
+
         async def chunk_generator(output_bytes):
             for i in range(0, len(output_bytes), chunk_size):
                 if i + chunk_size > len(output_bytes):
@@ -284,7 +294,14 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
             lambda seconds: BaseSynthesizer.get_message_cutoff_from_total_response_length(
                 synthesizer_config, message, seconds, len(output_bytes)
             ),
+            total_chunks
         )
+    
+    def estimate_total_audio_bytes_of_message(self, message: BaseMessage) -> int:
+        '''
+        Estimate the number of audio bytes of the text to be synthesized
+        '''
+        return model.predict([[len(message.text)]])
 
     async def experimental_mp3_streaming_output_generator(
         self,

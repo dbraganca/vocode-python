@@ -688,6 +688,9 @@ class StreamingConversation(Generic[OutputDeviceType]):
             self.synthesizer.get_synthesizer_config().audio_encoding,
             self.synthesizer.get_synthesizer_config().sampling_rate,
         )
+
+        total_chunks = int(synthesis_result.total_chunks)
+
         chunk_idx = 0
         seconds_spoken = 0
         async for chunk_result in synthesis_result.chunk_generator:
@@ -696,7 +699,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                 len(chunk_result.chunk) / chunk_size
             )
             seconds_spoken = chunk_idx * seconds_per_chunk
-            if stop_event.is_set():
+            if stop_event.is_set() and chunk_idx/total_chunks < 0.7:
                 self.logger.debug(
                     "Interrupted, stopping text to speech after {} chunks".format(
                         chunk_idx

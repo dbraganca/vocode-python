@@ -316,6 +316,9 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
         session = self.aiohttp_session
         response = await self.make_request(session, url, body, headers)
 
+        est_audio_bytes = self.estimate_total_audio_bytes_of_message(message.text)
+        total_chunks = int(est_audio_bytes / chunk_size) + 1
+
         if self.experimental_streaming:
             result = SynthesisResult(
                 self.experimental_mp3_streaming_output_generator(
@@ -327,6 +330,7 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
                 lambda seconds: self.get_message_cutoff_from_voice_speed(
                     message, seconds, self.words_per_minute
                 ),
+                total_chunks
             )
             if return_tuple:
                 return result, message
