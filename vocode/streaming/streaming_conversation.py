@@ -708,6 +708,12 @@ class StreamingConversation(Generic[OutputDeviceType]):
         total_chunks = int(synthesis_result.total_chunks)
 
         chunk_idx = 0
+
+        self.logger.debug(f"Total chunks: {total_chunks} - Chunk size: {chunk_size}")
+        self.logger.debug(f"chunk_id: {chunk_idx}")
+        self.logger.debug(f"chunk_idx+1/total_chunks: {(chunk_idx+1)/total_chunks}")
+        self.logger.debug(f"0 <= chunk_idx+1/total_chunks < 0.7: {0 <= (chunk_idx+1)/total_chunks < 0.7}")
+
         seconds_spoken = 0
         async for chunk_result in synthesis_result.chunk_generator:
             if self.first_chunk_flag:
@@ -717,8 +723,9 @@ class StreamingConversation(Generic[OutputDeviceType]):
             speech_length_seconds = seconds_per_chunk * (
                 len(chunk_result.chunk) / chunk_size
             )
-            seconds_spoken = chunk_idx * seconds_per_chunk
-            if stop_event.is_set() and chunk_idx/total_chunks < 0.7:
+            seconds_spoken = chunk_idx * seconds_per_chunk 
+
+            if stop_event.is_set() and 0 <= (chunk_idx+1)/total_chunks < 0.7:
                 self.logger.debug(
                     "Interrupted, stopping text to speech after {} chunks".format(
                         chunk_idx

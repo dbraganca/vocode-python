@@ -316,8 +316,9 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
         session = self.aiohttp_session
         response = await self.make_request(session, url, body, headers)
 
-        est_audio_bytes = self.estimate_total_audio_bytes_of_message(message.text)
+        est_audio_bytes = self.estimate_total_audio_bytes_of_message(message)
         total_chunks = int(est_audio_bytes / chunk_size) + 1
+        self.logger.debug(f"Estimated audio bytes: {est_audio_bytes}; Total_chunks: {total_chunks} for `{message.text}`")
 
         if self.experimental_streaming:
             result = SynthesisResult(

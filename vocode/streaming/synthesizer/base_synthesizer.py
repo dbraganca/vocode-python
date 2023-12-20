@@ -301,7 +301,9 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
         '''
         Estimate the number of audio bytes of the text to be synthesized
         '''
-        return model.predict([[len(message.text)]])
+        est_bytes = model.predict([[len(message.text)]])
+        self.logger.debug(f"Estimating total audio bytes: {int(est_bytes)} bytes for `{message.text}`")
+        return int(est_bytes)
 
     async def experimental_mp3_streaming_output_generator(
         self,
