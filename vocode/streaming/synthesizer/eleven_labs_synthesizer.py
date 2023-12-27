@@ -6,7 +6,8 @@ import io
 from typing import List, Any, AsyncGenerator, Optional, Tuple, Union, Dict
 import wave
 import aiohttp
-from opentelemetry.trace import Span
+from opentelemetry import trace
+from opentelemetry.trace import Span, set_span_in_context
 from pydub import AudioSegment
 from langchain.docstore.document import Document
 import base64
@@ -201,7 +202,10 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
             chunk_size=chunk_size,
         )
         return result
-
+    
+    # @tracer.start_as_current_span(
+    #     f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.index",
+    # )
     async def get_result_from_index(
             self,
             message: BaseMessage,
@@ -215,10 +219,16 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
                 "similarity_boost": self.similarity_boost,
                 "voice_id": self.voice_id
             }
+
+        query_span = tracer.start_span(
+            f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.query"
+        )
         result_embeds: List[Tuple[Document, float]] = await self.vector_db.similarity_search_with_score(
             query=message.text,
             filter=index_filter
         )
+        query_span.end()
+        
         if result_embeds:
             doc, score = result_embeds[0] # top result
             if score > SIMILARITY_THRESHOLD:
@@ -226,20 +236,25 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
                 text_message = doc.page_content
                 self.logger.debug(f"Found similar synthesized text in vector_db: {text_message}")
                 self.logger.debug(f"Original text: {message.text}")
+                index_message = BaseMessage(text=text_message)
                 try:
+                    s3_span = tracer.start_span(
+                        f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.s3"
+                    )
                     async with self.aiobotocore_session.create_client('s3', config=s3_config) as _s3:
                         audio_data = await load_from_s3_async(
                             bucket_name=self.bucket_name, 
                             object_key=object_id,
                             s3_client=_s3
                         )
+                    s3_span.end()
                 except Exception as e:
                     self.logger.debug(f"Error loading object from S3: {str(e)}")
                     audio_data = None
                 if audio_data is not None:
                     if self.cache:
                         self.logger.debug(f"Adding {text_message} to cache.")
-                        cache_key = self.get_cache_key(message.text)
+                        cache_key = self.get_cache_key(text_message)
                         self.logger.debug(f"Cache key: {cache_key}")
                         self.cache.set(cache_key, base64.b64encode(audio_data))
                     result = self.get_result_from_mp3_audio_data(
@@ -247,12 +262,15 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
                         message,
                         chunk_size
                     )
-                    return result
+                    return result, index_message
                 else:
-                    return None
+                    return None, index_message
             else:
-                return None
+                return None, None
 
+    @tracer.start_as_current_span(
+        f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.create_speech",
+    )
     async def create_speech(
         self,
         message: BaseMessage,
@@ -276,80 +294,109 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
                     chunk_size
                 )
                 if return_tuple:
-                    return result, BaseMessage(text=message.text)
+                    return result, message
                 else:
                     return result
-
+            
         # check vector db
+        return_with_index_task = None
         if self.vector_db and self.bucket_name:
-            result: SynthesisResult = await self.get_result_from_index(
-                message,
-                chunk_size
+            async def return_with_index():
+                result: SynthesisResult
+                index_message: BaseMessage 
+                result, index_message = await self.get_result_from_index(
+                    message,
+                    chunk_size
+                )
+                if result is not None:
+                    if return_tuple:
+                        return result, index_message
+                    else:
+                        return result
+            return_with_index_task = asyncio.create_task(
+                return_with_index(),
+                name="return_with_index"
             )
-            if result is not None:
+            
+        return_with_elevenlabs_task = None        
+        async def return_with_elevenlabs():
+            self.logger.debug(f"Synthesizing: {message.text}")
+            voice = self.elevenlabs.Voice(voice_id=self.voice_id)
+            if self.stability is not None and self.similarity_boost is not None:
+                voice.settings = self.elevenlabs.VoiceSettings(
+                    stability=self.stability, similarity_boost=self.similarity_boost
+                )
+            url = self.make_url()
+
+            headers = {"xi-api-key": self.api_key}
+            body = {
+                "text": message.text,
+                "voice_settings": voice.settings.dict() if voice.settings else None,
+            }
+            if self.model_id:
+                body["model_id"] = self.model_id
+
+
+            create_speech_span = tracer.start_span(
+                f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.create_first",
+            )
+            session = self.aiohttp_session
+            response = await self.make_request(session, url, body, headers)
+            if self.experimental_streaming:
+                result = SynthesisResult(
+                    self.experimental_mp3_streaming_output_generator(
+                        response, 
+                        chunk_size, 
+                        create_speech_span,
+                        message                    
+                    ),  # should be wav
+                    lambda seconds: self.get_message_cutoff_from_voice_speed(
+                        message, seconds, self.words_per_minute
+                    ),
+                )
                 if return_tuple:
-                    return result, BaseMessage(text=message.text)
-                else:
+                    return result, message
+                else: 
                     return result
+            else:
+                audio_data = await response.read()
+                create_speech_span.end()
+                convert_span = tracer.start_span(
+                    f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.convert",
+                )
 
-        # else synthesize
-        self.logger.debug(f"Synthesizing: {message.text}")
-        voice = self.elevenlabs.Voice(voice_id=self.voice_id)
-        if self.stability is not None and self.similarity_boost is not None:
-            voice.settings = self.elevenlabs.VoiceSettings(
-                stability=self.stability, similarity_boost=self.similarity_boost
-            )
-        url = self.make_url()
+                result = self.get_result_from_mp3_audio_data(
+                    audio_data,
+                    message,
+                    chunk_size
+                )
 
-        headers = {"xi-api-key": self.api_key}
-        body = {
-            "text": message.text,
-            "voice_settings": voice.settings.dict() if voice.settings else None,
-        }
-        if self.model_id:
-            body["model_id"] = self.model_id
-
-        create_speech_span = tracer.start_span(
-            f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.create_total",
+                convert_span.end()
+                if return_tuple:
+                    return result, message
+                else: 
+                    return result
+        return_with_elevenlabs_task = asyncio.create_task(
+            return_with_elevenlabs(), 
+            name="return_with_elevenlabs"
         )
 
-        session = self.aiohttp_session
-        response = await self.make_request(session, url, body, headers)
-
-        if self.experimental_streaming:
-            result = SynthesisResult(
-                self.experimental_mp3_streaming_output_generator(
-                    response, 
-                    chunk_size, 
-                    create_speech_span,
-                    message                    
-                ),  # should be wav
-                lambda seconds: self.get_message_cutoff_from_voice_speed(
-                    message, seconds, self.words_per_minute
-                ),
-            )
-            if return_tuple:
-                return result, message
-            else: 
-                return result
+        # Wait for either of the tasks to complete
+        done, pending = await asyncio.wait(
+            [return_with_index_task, return_with_elevenlabs_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        faster_task = done.pop()
+        pending_task = pending.pop()
+        result = faster_task.result() # pop the task that completed first
+        self.logger.debug(f"Faster task: {faster_task.get_name() }")
+        if result is not None:
+            pending_task.cancel()
+            return result
         else:
-            audio_data = await response.read()
-            create_speech_span.end()
-            convert_span = tracer.start_span(
-                f"synthesizer.{SynthesizerType.ELEVEN_LABS.value.split('_', 1)[-1]}.convert",
-            )
-
-            result = self.get_result_from_mp3_audio_data(
-                audio_data,
-                message,
-                chunk_size
-            )
-
-            convert_span.end()
-            if return_tuple:
-                return result, message
-            else: 
-                return result
+            self.logger.debug(f"Faster task returned None, awaiting pending task: {pending_task.get_name()}")
+            result = await pending_task
+            return result
 
     async def make_request(self, session, url, body, headers):
         max_retries = 3

@@ -12,6 +12,7 @@ from vocode import getenv
 from vocode.streaming.transcriber.base_transcriber import (
     BaseAsyncTranscriber,
     Transcription,
+    tracer,
     meter,
     HUMAN_ACTIVITY_DETECTED
 )
@@ -197,6 +198,7 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
                 self.received_first_audio = True
                 if self.transcriber_config.voice_activity_detector_config:
                     # when using WebRTC VAD, there are too many false positive that break the conversation flow
+                    self.logger.debug(f"Using voice activity detector.")
                     try:
                         # TODO: make this async
                         start_time = time.time()
@@ -262,7 +264,7 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
             ):  # means we've finished receiving transcriptions
                 self.logger.debug(f"Deepgram: received final transcription - _ended:{self._ended}")
                 self._ended = True
-                continue
+                break
             cur_max_latency = self.audio_cursor - transcript_cursor
             transcript_cursor = data["start"] + data["duration"]
             cur_min_latency = self.audio_cursor - transcript_cursor
@@ -338,10 +340,12 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         try:
             self.audio_cursor = 0.0
             extra_headers = {"Authorization": f"Token {self.api_key}"}
-
+            self.logger.debug(f"Connecting to Deepgram...")
+            start_time = time.time()
             async with websockets.connect(
                 self.get_deepgram_url(), extra_headers=extra_headers
             ) as ws:
+                self.logger.debug(f"Connected to Deepgram! Connection took {time.time()-start_time:.2f} sec.")
                 self._task= asyncio.gather(self.sender(ws), self.receiver(ws))
                 await self._task
         except asyncio.CancelledError:
