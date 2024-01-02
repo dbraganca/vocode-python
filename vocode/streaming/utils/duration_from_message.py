@@ -1,8 +1,14 @@
 from nltk.tokenize import word_tokenize
 import numpy as np
+from pkg_resources import resource_filename
+
+coefficients_file_path = resource_filename(
+    __name__,
+    "quadratic_coefficients.csv"
+)
 
 QUADRATIC_COEFFICIENTS: np.ndarray = np.loadtxt(
-    "quadratic_coefficients.csv",
+    coefficients_file_path,
     delimiter=","
 )
 QUADRATIC_POLYNOMIAL: np.poly1d = np.poly1d(QUADRATIC_COEFFICIENTS)
