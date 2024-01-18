@@ -83,6 +83,9 @@ class RedisRenewableTTLCache:
         logger.setLevel(logging.DEBUG)
         
         index_config: IndexConfig = synthesizer_config.index_config
+        if index_config is None:
+            logger.info("No index config found, skipping preload")
+            return
         vector_db: VectorDB = self._factory.create_vector_db(index_config.vector_db_config)
         bucket_name = index_config.bucket_name
         
