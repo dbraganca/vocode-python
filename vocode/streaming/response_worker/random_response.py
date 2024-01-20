@@ -211,7 +211,7 @@ class RandomAudioManager:
                 backtrack_audio_config=self.backtrack_audio_config
             )
 
-    async def start(self):
+    def start(self):
         
         if self.filler_audio_worker is not None and self.filler_audio_config is not None:
             asyncio.create_task(

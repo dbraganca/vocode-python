@@ -546,14 +546,9 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.agent_responses_worker.start()
         self.synthesis_results_worker.start()
         self.output_device.start()
-        await self.random_audio_manager.start()
+        self.random_audio_manager.start()
         if self.actions_worker is not None:
             self.actions_worker.start()
-        is_ready = await self.transcriber.ready()
-        if not is_ready:
-            raise Exception("Transcriber startup failed")
-
-
         self.agent.start()
         self.agent.attach_transcript(self.transcript)
         initial_message = self.agent.get_agent_config().initial_message
@@ -562,10 +557,11 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.active = True
         if started_event:
             started_event.set()
+        is_ready = await self.transcriber.ready()
+        if not is_ready:
+            raise Exception("Transcriber startup failed")
         if mark_ready:
             await mark_ready()
-        # bluberry modification: added self.agent.get_agent_config().track_bot_sentiment 
-        # to the following two if statements
         if (
             self.synthesizer.get_synthesizer_config().sentiment_config 
             and self.agent.get_agent_config().track_bot_sentiment
