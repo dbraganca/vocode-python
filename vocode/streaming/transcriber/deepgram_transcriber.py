@@ -67,7 +67,7 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         self._ended = False
         self._task = None
         self.received_first_audio = False
-        self.is_ready = False
+        self.is_ready = asyncio.Event()
         self.logger = logger or logging.getLogger(__name__)
         self.audio_cursor = 0.0
 
@@ -108,6 +108,15 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         self._task.cancel()
         super().terminate()
 
+    async def ready(self):
+        """Waits for 2 seconds for websocket to connect"""
+        try:
+            await asyncio.wait_for(self.is_ready.wait(), timeout=2.0)
+            return True
+        except asyncio.TimeoutError:
+            self.logger.debug("Deepgram websocket connection timed out")
+            return False 
+
     def get_deepgram_url(self):
         if self.transcriber_config.audio_encoding == AudioEncoding.LINEAR16:
             encoding = "linear16"
@@ -130,8 +139,6 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
             extra_params["filler_words"] = self.transcriber_config.filler_words
         if self.transcriber_config.deepgram_endpointing:
             extra_params["endpointing"] = self.transcriber_config.deepgram_endpointing
-        if self.transcriber_config.keywords:
-            extra_params["keywords"] = self.transcriber_config.keywords
         if (
             self.transcriber_config.endpointing_config
             and self.transcriber_config.endpointing_config.type
@@ -139,13 +146,14 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         ):
             extra_params["punctuate"] = "true"
         url_params.update(extra_params)
+        final_url = f"wss://api.deepgram.com/v1/listen?{urlencode(url_params)}"
 
-        # Encode the "keywords" field first
-        encoded_keywords = "&".join(
-            [f"keywords={quote(kw)}" for kw in url_params["keywords"]]
-        )
-        del url_params["keywords"]
-        final_url = f"wss://api.deepgram.com/v1/listen?{urlencode(url_params)}&{encoded_keywords}"
+        if self.transcriber_config.keywords:
+            encoded_keywords = "&".join(
+                [f"keywords={quote(kw)}" for kw in self.transcriber_config.keywords]
+            )
+            final_url = f"{final_url}&{encoded_keywords}"
+
         return final_url
 
     def is_speech_final(
@@ -387,12 +395,14 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
             extra_headers = {"Authorization": f"Token {self.api_key}"}
             self.logger.debug(f"Connecting to Deepgram...")
             start_time = time.time()
+            deepgram_url = self.get_deepgram_url()
             async with websockets.connect(
-                self.get_deepgram_url(), extra_headers=extra_headers
+                deepgram_url, extra_headers=extra_headers
             ) as ws:
                 self.logger.debug(
                     f"Connected to Deepgram! Connection took {time.time()-start_time:.2f} sec."
                 )
+                self.is_ready.set()
                 self._task = asyncio.gather(self.sender(ws), self.receiver(ws))
                 await self._task
         except asyncio.CancelledError:
