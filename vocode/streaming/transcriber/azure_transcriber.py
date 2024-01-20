@@ -3,12 +3,13 @@ import queue
 from typing import Optional
 import json
 
+import azure.cognitiveservices.speech as speechsdk
+from azure.cognitiveservices.speech import SpeechRecognitionResult
 from azure.cognitiveservices.speech.audio import (
     PushAudioInputStream,
     AudioStreamFormat,
     AudioStreamWaveFormat,
 )
-import azure.cognitiveservices.speech as speechsdk
 
 from vocode import getenv
 
@@ -97,14 +98,18 @@ class AzureTranscriber(BaseThreadAsyncTranscriber[AzureTranscriberConfig]):
 
 
     def recognized_sentence_final(self, evt):
-        json_result = json.loads(evt.result.json)
+        result: SpeechRecognitionResult = evt.result
+        json_result = json.loads(result.json)
+        self.logger.debug(f"RECOGNIZED json: {json_result}")
         message = json_result["DisplayText"]
         confidence = json_result["NBest"][0]["Confidence"]
         duration = json_result["Duration"]
         ms_in_second = 1000
-        latency = evt.result.properties[
+        self.logger.debug(f"RECOGNIZED evt.result.properties: {result.properties}")
+        latency = int(result.properties[
             speechsdk.PropertyId.SpeechServiceResponse_RecognitionLatencyMs
-        ]/ms_in_second
+        ])/ms_in_second
+        self.logger.debug(f"RECOGNIZED latency: {latency}")
         time_silent = self.calculate_time_silent(json_result)
         self.output_janus_queue.sync_q.put_nowait(
             Transcription(
@@ -118,13 +123,14 @@ class AzureTranscriber(BaseThreadAsyncTranscriber[AzureTranscriberConfig]):
         )
 
     def recognized_sentence_stream(self, evt):
-        json_result = json.loads(evt.result.json)
+        result: SpeechRecognitionResult = evt.result
+        json_result = json.loads(result.json)
         message = json_result["Text"]
         duration = json_result["Duration"]
         ms_in_second = 1000
-        latency = evt.result.properties[
+        latency = int(result.properties[
             speechsdk.PropertyId.SpeechServiceResponse_RecognitionLatencyMs
-        ]/1000
+        ])/ms_in_second
         self.output_janus_queue.sync_q.put_nowait(
             Transcription(
                 message=message,
@@ -137,7 +143,7 @@ class AzureTranscriber(BaseThreadAsyncTranscriber[AzureTranscriberConfig]):
 
     def _run_loop(self):
         stream = self.generator()
-
+        self.logger.debug("Got Azure generator stream")
         def stop_cb(evt):
             self.logger.debug("CLOSING on {}".format(evt))
             self.speech.stop_continuous_recognition()
