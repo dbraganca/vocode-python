@@ -113,16 +113,18 @@ class AzureSynthesizer(BaseSynthesizer[AzureSynthesizerConfig]):
             speech_config.set_speech_synthesis_output_format(
                 speechsdk.SpeechSynthesisOutputFormat.Raw8Khz8BitMonoMULaw
             )
+        
+        if self.synthesizer_config.endpoint_id:
+            speech_config.endpoint_id = self.synthesizer_config.endpoint_id
+        
         self.synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=speech_config, audio_config=None
         )
-
         self.voice_name = self.synthesizer_config.voice_name
         self.pitch = self.synthesizer_config.pitch
         self.rate = self.synthesizer_config.rate
         self.thread_pool_executor = ThreadPoolExecutor(max_workers=1)
-        self.logger = logger or logging.getLogger(__name__)
-
+        self.logger = logger or logging.getLogger(__name__)       
 
     async def get_audio_data_from_cache_or_download(
         self, phrase: BaseMessage, base_path: str

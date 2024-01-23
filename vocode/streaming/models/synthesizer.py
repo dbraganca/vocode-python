@@ -149,6 +149,7 @@ class AzureSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.AZURE.value
     pitch: int = AZURE_SYNTHESIZER_DEFAULT_PITCH
     rate: int = AZURE_SYNTHESIZER_DEFAULT_RATE
     language_code: str = "en-US"    
+    endpoint_id: Optional[str] = None
 
     def get_cache_key(self, text: str) -> str:
         return f"{SynthesizerType.AZURE.value}:{self.voice_name}:{self.pitch}:{self.rate}:{text}"

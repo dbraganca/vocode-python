@@ -100,16 +100,13 @@ class AzureTranscriber(BaseThreadAsyncTranscriber[AzureTranscriberConfig]):
     def recognized_sentence_final(self, evt):
         result: SpeechRecognitionResult = evt.result
         json_result = json.loads(result.json)
-        self.logger.debug(f"RECOGNIZED json: {json_result}")
         message = json_result["DisplayText"]
         confidence = json_result["NBest"][0]["Confidence"]
         duration = json_result["Duration"]
         ms_in_second = 1000
-        self.logger.debug(f"RECOGNIZED evt.result.properties: {result.properties}")
         latency = int(result.properties[
             speechsdk.PropertyId.SpeechServiceResponse_RecognitionLatencyMs
         ])/ms_in_second
-        self.logger.debug(f"RECOGNIZED latency: {latency}")
         time_silent = self.calculate_time_silent(json_result)
         self.output_janus_queue.sync_q.put_nowait(
             Transcription(
